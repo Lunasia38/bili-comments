@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B站评论抓取</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2328;
+    --text2: #6b7280;
+    --accent: #fb7299;
+    --accent-hover: #f45d8c;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --mono: ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 32px 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 18px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { font-size: 13px; color: var(--text2); margin-top: 2px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+
+  label.field { display: block; font-size: 13px; color: var(--text2); margin-bottom: 6px; }
+  input[type="text"], input[type="number"] {
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 8px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(251,114,153,.12); }
+
+  .row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 16px; align-items: flex-end; }
+
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    padding: 9px 18px; font-size: 13px; border: none; background: #fff; color: var(--text2);
+    cursor: pointer; transition: all .15s;
+  }
+  .seg button.active { background: var(--accent); color: #fff; }
+
+  .count-wrap { display: flex; align-items: center; gap: 8px; }
+  .count-wrap input { width: 110px; }
+
+  .toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); user-select: none; padding-bottom: 10px; }
+  .toggle input { display: none; }
+  .toggle .track {
+    width: 38px; height: 22px; border-radius: 11px; background: #d1d5db;
+    position: relative; transition: background .15s; flex-shrink: 0;
+  }
+  .toggle .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; transition: transform .15s;
+  }
+  .toggle input:checked + .track { background: var(--accent); }
+  .toggle input:checked + .track::after { transform: translateX(16px); }
+
+  .submit {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 11px 28px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: background .15s;
+  }
+  .submit:hover:not(:disabled) { background: var(--accent-hover); }
+  .submit:disabled { opacity: .55; cursor: not-allowed; }
+
+  .log-box {
+    background: #fafafa; border: 1px solid var(--border); border-radius: 10px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+    padding: 14px 16px; height: 240px; overflow-y: auto; color: #374151;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log-box .l-err { color: var(--err); }
+  .log-box:empty::after { content: "等待任务…"; color: #b0b6bf; }
+
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .stat {
+    background: #fdf2f6; border: 1px solid #fbd5e1; border-radius: 10px;
+    padding: 10px 16px; min-width: 110px;
+  }
+  .stat .v { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .stat .k { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 18px; border-radius: 8px; font-size: 13.5px; cursor: pointer;
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    text-decoration: none; transition: all .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+
+  .result-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .up-line { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
+  .up-line a { color: var(--accent); text-decoration: none; }
+  .up-line a:hover { text-decoration: underline; }
+  .up-line .uid { margin-left: 12px; font-family: var(--mono); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { background: #f9fafb; color: var(--text2); font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+  td.no, td.like { white-space: nowrap; color: var(--text2); }
+  .table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 480px; }
+  tr.reply-row td { background: #fcfcfd; }
+  .type-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #eef1f4; color: var(--text2); white-space: nowrap; }
+  .type-tag.sub { background: #fdf2f6; color: var(--accent); }
+
+  .msg {
+    padding: 12px 16px; border-radius: 10px; font-size: 13.5px; margin-bottom: 16px;
+  }
+  .msg.err { background: #fef2f2; color: var(--err); border: 1px solid #fecaca; }
+
+  .hidden { display: none; }
+  .spin {
+    width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+    border-radius: 50%; animation: rot .7s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  footer { text-align: center; font-size: 12px; color: #9aa1ab; margin-top: 8px; }
+
+  /* 左上角设置按钮 */
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); font-size: 18px; cursor: pointer; color: var(--text2);
+    transition: all .15s; flex-shrink: 0; line-height: 1;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* 弹窗 */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15,18,25,.45);
+    display: flex; align-items: center; justify-content: center; z-index: 50;
+  }
+  .overlay.hidden { display: none; }
+  .modal {
+    background: var(--card); border-radius: 14px; padding: 24px;
+    width: 420px; max-width: calc(100vw - 32px);
+    box-shadow: 0 12px 40px rgba(0,0,0,.18);
+  }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .modal-msg { font-size: 13px; margin-top: 12px; min-height: 18px; color: var(--text2); }
+  .modal-msg.ok { color: var(--ok); }
+  .modal-msg.err { color: var(--err); }
+  .modal .hint { font-size: 12px; color: #9aa1ab; margin-top: 14px; line-height: 1.6; }
+  .btn.danger { color: var(--err); border-color: #fecaca; }
+  .btn.danger:hover:not(:disabled) { background: #fef2f2; border-color: var(--err); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <button class="icon-btn" id="settingsBtn" title="服务设置（改端口 / 停止服务）">⚙</button>
+    <div class="logo">B</div>
+    <div>
+      <h1>B站视频评论抓取</h1>
+      <p>输入 BV 号或视频链接，抓取评论并导出 CSV / MD，开始抓取后文件自动导出到output目录下</p>
+    </div>
+  </header>
+
+  <!-- 表单 -->
+  <div class="card">
+    <h2>抓取参数</h2>
+    <label class="field">视频链接或 BV 号</label>
+    <input type="text" id="input" placeholder="例如 BV1fy4y1L7Rq 或 https://www.bilibili.com/video/BV1fy4y1L7Rq/" spellcheck="false">
+
+    <div class="row">
+      <div>
+        <label class="field">排序方式</label>
+        <div class="seg" id="sortSeg">
+          <button type="button" data-v="hot" class="active">按热度</button>
+          <button type="button" data-v="time">按时间</button>
+        </div>
+      </div>
+      <div>
+        <label class="field">抓取条数（1–9999999）</label>
+        <div class="count-wrap">
+          <input type="number" id="count" value="50" min="1" max="9999999">
+        </div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="replies">
+        <span class="track"></span>
+        同时抓楼中楼回复
+      </label>
+      <button class="submit" id="goBtn"><span class="spin hidden" id="spin"></span><span id="goText">开始抓取</span></button>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="card">
+    <h2>运行日志</h2>
+    <div class="log-box" id="log"></div>
+  </div>
+
+  <!-- 结果 -->
+  <div class="card hidden" id="resultCard">
+    <h2>抓取结果</h2>
+    <div class="msg err hidden" id="errBox"></div>
+    <div id="resultBody" class="hidden">
+      <div class="result-title" id="rTitle"></div>
+      <div class="up-line">UP主：<a id="rUp" target="_blank" rel="noopener"></a><span class="uid">UID：<span id="rUid"></span></span></div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="rFetched">0</div><div class="k">本次抓取（条）</div></div>
+        <div class="stat"><div class="v" id="rTotal">0</div><div class="k">评论总数</div></div>
+      </div>
+      <div class="btns">
+        <a class="btn primary" id="dlCsv" download>下载 CSV</a>
+        <a class="btn" id="dlMd" download>下载 MD</a>
+        <button class="btn" id="previewBtn">预览评论</button>
+      </div>
+      <div class="table-wrap hidden" id="previewWrap" style="margin-top:16px;">
+        <table>
+          <thead><tr><th>#</th><th>类型</th><th>用户</th><th>点赞</th><th>时间</th><th>评论内容</th></tr></thead>
+          <tbody id="previewBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer>仅用于研究用途 · 请遵守 B 站用户协议 · 脚本已内置请求间隔，请勿高频使用</footer>
+</div>
+
+<!-- 服务设置弹窗 -->
+<div class="overlay hidden" id="overlay">
+  <div class="modal">
+    <h3>服务设置</h3>
+    <label class="field">服务端口（修改后自动重启并跳转）</label>
+    <input type="number" id="portInput" min="1024" max="65535" spellcheck="false">
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="btns" style="margin-top:16px;">
+      <button class="btn primary" id="restartBtn">重启服务（新端口）</button>
+      <button class="btn danger" id="stopBtn">停止服务并释放端口</button>
+      <button class="btn" id="closeModalBtn">关闭</button>
+    </div>
+    <p class="hint">停止服务后本页面将不可用；重新启动请双击 <code>tools/webui/启动WebUI.bat</code>，或在终端运行 <code>node tools/webui/webui.mjs</code></p>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const logBox = $('log');
+let currentResult = null;
+let sort = 'hot';
+
+// 排序分段控件
+$('sortSeg').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  sort = btn.dataset.v;
+  $('sortSeg').querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+});
+
+function log(line, isErr) {
+  const div = document.createElement('div');
+  if (isErr) div.className = 'l-err';
+  div.textContent = line;
+  logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function showError(msg) {
+  $('resultCard').classList.remove('hidden');
+  $('resultBody').classList.add('hidden');
+  const box = $('errBox');
+  box.textContent = msg;
+  box.classList.remove('hidden');
+}
+
+// 开始抓取
+$('goBtn').addEventListener('click', async () => {
+  const input = $('input').value.trim();
+  if (!/BV1[0-9A-Za-z]{9}/.test(input)) { showError('请输入包含 BV 号的视频链接或 BV 号'); return; }
+
+  // 重置 UI
+  logBox.innerHTML = '';
+  $('resultCard').classList.add('hidden');
+  $('errBox').classList.add('hidden');
+  $('previewWrap').classList.add('hidden');
+  $('goBtn').disabled = true;
+  $('spin').classList.remove('hidden');
+  $('goText').textContent = '抓取中…';
+
+  try {
+    const res = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input,
+        sort,
+        count: parseInt($('count').value, 10) || 50,
+        replies: $('replies').checked,
+      }),
+    });
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (line) handleEvent(JSON.parse(line));
+      }
+    }
+  } catch (e) {
+    showError('请求失败：' + e.message);
+  } finally {
+    $('goBtn').disabled = false;
+    $('spin').classList.add('hidden');
+    $('goText').textContent = '开始抓取';
+  }
+});
+
+function handleEvent(ev) {
+  if (ev.type === 'log') {
+    log(ev.line);
+  } else if (ev.type === 'error') {
+    log('✗ ' + ev.message, true);
+    showError(ev.message);
+  } else if (ev.type === 'done') {
+    const r = ev.result;
+    currentResult = r;
+    log('✓ 完成：' + r.title);
+    $('resultCard').classList.remove('hidden');
+    $('errBox').classList.add('hidden');
+    $('resultBody').classList.remove('hidden');
+    $('rTitle').textContent = r.title;
+    $('rUp').textContent = r.upName || '未知';
+    $('rUp').href = r.upMid ? 'https://space.bilibili.com/' + r.upMid : '#';
+    $('rUid').textContent = r.upMid ?? '';
+    $('rFetched').textContent = r.fetched;
+    $('rTotal').textContent = r.total;
+    $('dlCsv').href = '/output/' + encodeURIComponent(r.csv);
+    $('dlCsv').setAttribute('download', r.csv);
+    $('dlMd').href = '/output/' + encodeURIComponent(r.md);
+    $('dlMd').setAttribute('download', r.md);
+    $('previewWrap').classList.add('hidden');
+  }
+}
+
+// 预览：拉取 MD 并渲染为表格
+$('previewBtn').addEventListener('click', async () => {
+  if (!currentResult) return;
+  const wrap = $('previewWrap');
+  if (!wrap.classList.contains('hidden')) { wrap.classList.add('hidden'); return; }
+
+  if (!wrap.dataset.loaded) {
+    const text = await (await fetch('/output/' + encodeURIComponent(currentResult.md))).text();
+    const tbody = $('previewBody');
+    tbody.innerHTML = '';
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cells = line.split('|').slice(1, -1).map(s => s.trim());
+      if (cells.length < 6 || /^-+$/.test(cells[1])) continue;
+      const tr = document.createElement('tr');
+      const isSub = cells[1].startsWith('回复#');
+      if (isSub) tr.className = 'reply-row';
+      const tag = isSub ? '<span class="type-tag sub">' + esc(cells[1]) + '</span>' : '<span class="type-tag">主评论</span>';
+      tr.innerHTML =
+        '<td class="no">' + esc(cells[0]) + '</td>' +
+        '<td>' + tag + '</td>' +
+        '<td>' + esc(cells[2].replace(/\\\|/g, '|')) + '</td>' +
+        '<td class="like">' + esc(cells[3]) + '</td>' +
+        '<td class="no">' + esc(cells[4]) + '</td>' +
+        '<td>' + esc(cells[5].replace(/\\\|/g, '|')) + '</td>';
+      tbody.appendChild(tr);
+    }
+    wrap.dataset.loaded = '1';
+  }
+  wrap.classList.remove('hidden');
+});
+
+/* ---------- 服务设置弹窗 ---------- */
+const overlay = $('overlay');
+const mmsg = (text, cls) => {
+  const el = $('modalMsg');
+  el.textContent = text;
+  el.className = 'modal-msg' + (cls ? ' ' + cls : '');
+};
+
+$('settingsBtn').addEventListener('click', () => {
+  $('portInput').value = location.port || '5177';
+  mmsg('');
+  overlay.classList.remove('hidden');
+});
+const closeModal = () => overlay.classList.add('hidden');
+$('closeModalBtn').addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// 重启服务（新端口）：旧实例退出，前端轮询新端口就绪后自动跳转
+$('restartBtn').addEventListener('click', async () => {
+  const port = parseInt($('portInput').value, 10);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) { mmsg('端口必须是 1024–65535 的整数', 'err'); return; }
+  if (port === parseInt(location.port || '5177', 10)) { mmsg('新端口与当前端口相同', 'err'); return; }
+
+  $('restartBtn').disabled = true;
+  mmsg('正在重启服务…');
+  try {
+    const res = await fetch('/api/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port }),
+    });
+    const j = await res.json();
+    if (!j.ok) { $('restartBtn').disabled = false; mmsg(j.message || '重启失败', 'err'); return; }
+    mmsg(`服务正在切换到端口 ${port}，新服务就绪后自动跳转…`, 'ok');
+    pollNewPort(port);
+  } catch (e) {
+    $('restartBtn').disabled = false;
+    mmsg('请求失败：' + e.message, 'err');
+  }
+});
+
+// 轮询新端口直到可达，然后跳转
+function pollNewPort(port) {
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    if (Date.now() - started > 15000) {
+      clearInterval(timer);
+      $('restartBtn').disabled = false;
+      mmsg('新服务未在 15 秒内就绪，请手动访问 http://localhost:' + port, 'err');
+      return;
+    }
+    try {
+      await fetch(`http://localhost:${port}/`, { mode: 'no-cors', cache: 'no-store' });
+      clearInterval(timer);
+      location.href = `http://localhost:${port}/`;
+    } catch { /* 尚未就绪，继续等待 */ }
+  }, 400);
+}
+
+// 停止服务并释放端口
+$('stopBtn').addEventListener('click', async () => {
+  $('stopBtn').disabled = true;
+  $('restartBtn').disabled = true;
+  try {
+    const res = await fetch('/api/shutdown', { method: 'POST' });
+    const j = await res.json();
+    if (!j.ok) {
+      $('stopBtn').disabled = false;
+      $('restartBtn').disabled = false;
+      mmsg(j.message || '停止失败', 'err');
+      return;
+    }
+    mmsg('服务已停止，端口已释放。本页面不再可用，重新启动请双击 tools/webui/启动WebUI.bat', 'ok');
+  } catch {
+    // 服务已退出导致请求中断，同样视为已停止
+    mmsg('服务已停止，端口已释放。重新启动请双击 tools/webui/启动WebUI.bat', 'ok');
+  }
+});
+
+/* ---------- 页面心跳：浏览器页面全部关闭后，服务端自动停止 ---------- */
+const heartbeat = () => fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+heartbeat();              // 页面加载即发一次
+setInterval(heartbeat, 5000);
+</script>
+</body>
+</html>
